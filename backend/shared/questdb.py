@@ -1,5 +1,6 @@
 """QuestDB connection — ILP ingestion and REST query interface."""
 
+import asyncio
 import socket
 from datetime import datetime, timezone
 
@@ -27,14 +28,22 @@ class QuestDBClient:
             logger.info("QuestDB ILP socket connected", host=self.ilp_host, port=self.ilp_port)
         return self._socket
 
-    def send_ilp(self, table: str, tags: dict, fields: dict, timestamp: datetime | None = None) -> None:
-        """Send a single row via InfluxDB Line Protocol."""
+    def _send_line(self, line: bytes) -> None:
+        """Blocking socket write — runs in a thread via send_ilp."""
         sock = self._get_socket()
+        sock.sendall(line)
+
+    async def send_ilp(self, table: str, tags: dict, fields: dict, timestamp: datetime | None = None) -> None:
+        """Send a single row via InfluxDB Line Protocol.
+
+        The blocking socket write is offloaded to a thread so it
+        doesn't stall the async event loop under high throughput.
+        """
         tag_str = ",".join(f"{k}={v}" for k, v in tags.items())
         field_str = ",".join(f"{k}={v}" for k, v in fields.items())
         ts = int((timestamp or datetime.now(timezone.utc)).timestamp() * 1_000_000_000)
-        line = f"{table},{tag_str} {field_str} {ts}\n"
-        sock.sendall(line.encode())
+        line = f"{table},{tag_str} {field_str} {ts}\n".encode()
+        await asyncio.to_thread(self._send_line, line)
 
     async def query(self, sql: str) -> dict:
         """Execute a SQL query via REST API."""

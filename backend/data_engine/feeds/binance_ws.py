@@ -74,7 +74,7 @@ class BinanceWSFeed:
 
         # Write tick to QuestDB via ILP
         try:
-            questdb.send_ilp(
+            await questdb.send_ilp(
                 table="ticks",
                 tags={"symbol": SYMBOL, "exchange": "binance"},
                 fields={"price": price, "quantity": qty},
