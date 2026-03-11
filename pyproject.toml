@@ -1,0 +1,36 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "apex"
+version = "0.1.0"
+description = "APEX — AI-Powered Quantitative Trading System"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.110.0",
+    "uvicorn[standard]>=0.27.0",
+    "asyncpg>=0.29.0",
+    "sqlalchemy[asyncio]>=2.0.25",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.1.0",
+    "redis[hiredis]>=5.0.0",
+    "nats-py>=2.7.0",
+    "aiohttp>=3.9.0",
+    "websockets>=12.0",
+    "python-dotenv>=1.0.0",
+    "orjson>=3.9.0",
+    "structlog>=24.1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "httpx>=0.27.0",
+    "ruff>=0.2.0",
+]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 120
