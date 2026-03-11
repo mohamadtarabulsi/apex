@@ -46,7 +46,7 @@ cp .env.example .env
 # Edit .env with your API keys
 
 # 3. Launch
-docker-compose up
+docker compose up
 ```
 
 The dashboard will be at `http://localhost:5173` and the API at `http://localhost:8000`.
@@ -55,12 +55,24 @@ The dashboard will be at `http://localhost:5173` and the API at `http://localhos
 
 | Container | Port | Description |
 |-----------|------|-------------|
-| **backend** | 8000 | FastAPI monolith — all 4 engines in one process (REST + WebSocket) |
+| **backend** | 8000 | FastAPI monolith — all 4 modules in one process (REST + WebSocket) |
 | **dashboard** | 5173 | React dark terminal UI — real-time trading dashboard |
-| **postgres** | 5432 | Shared context bus — 8 tables for prices, signals, trades, risk |
-| **questdb** | 9000/9009 | High-frequency time-series — tick data and candles |
-| **redis** | 6379 | Pub/sub, streams, and caching |
-| **nats** | 4222 | JetStream event bus — inter-module messaging |
+| **postgres** | 5432 | PostgreSQL 16 — shared context bus (8 tables for signals, trades, risk, calibration) |
+| **questdb** | 9000/9009 | QuestDB 9.3.3 — high-frequency tick data and candles (ASOF JOIN, HORIZON JOIN) |
+| **redis** | 6379 | Redis 7 — pub/sub, streams, and feature caching |
+| **nats** | 4222 | NATS 2.12 JetStream — inter-module event bus |
+
+## API Routes
+
+All endpoints are served by module routers with clear prefixes:
+
+| Module | Prefix | Endpoints |
+|--------|--------|-----------|
+| Data Engine | `/api/v1/data` | `GET /prices/{symbol}` |
+| Intelligence | `/api/v1/intelligence` | `GET /calibration` |
+| Strategy | `/api/v1/strategy` | `GET /signals`, `GET /signals/{id}`, `GET /predictions` |
+| Risk & Execution | `/api/v1/risk` | `GET /state`, `GET /portfolio` |
+| System | `/` | `GET /health`, `GET /api/v1/status`, `WS /ws/feed` |
 
 ## Backend Modules
 
@@ -77,9 +89,9 @@ All modules share in-process memory via the `shared/` package (config, database,
 
 - **Backend**: Python 3.12, FastAPI, asyncpg, SQLAlchemy 2.0, NATS JetStream
 - **Frontend**: React 18, TypeScript, Tailwind CSS, Vite, Zustand, Lightweight Charts
-- **Infrastructure**: PostgreSQL 16, QuestDB, Redis 7, NATS 2.10
-- **AI/ML**: Claude, GPT-4, Grok, DeepSeek, Sonar, FinBERT (Phase 2+)
-- **Brokers**: Alpaca, Kalshi, Polymarket (Phase 2+)
+- **Infrastructure**: PostgreSQL 16, QuestDB 9.3.3, Redis 7, NATS 2.12 JetStream
+- **AI/ML**: Claude, GPT, Grok, DeepSeek, Sonar, FinBERT (Phase 3+)
+- **Brokers**: Alpaca, Kalshi, Polymarket (Phase 5+)
 
 ## Context Schema
 
@@ -98,7 +110,7 @@ All shared state lives in PostgreSQL under the `context` schema:
 
 ```bash
 # Run just infrastructure
-docker-compose up postgres questdb redis nats
+docker compose up postgres questdb redis nats
 
 # Run backend locally
 cd backend
@@ -111,4 +123,4 @@ cd dashboard && npm install && npm run dev
 
 ## Master Plan
 
-Full system design: [APEX Master Plan v5.2](./docs/APEX_Master_Plan_v5.2.md) (placeholder)
+Full system design: [APEX Master Plan v5.2](./docs/APEX_Master_Plan_v5.2.md)
