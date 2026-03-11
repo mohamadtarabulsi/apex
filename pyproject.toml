@@ -6,7 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "apex"
 version = "0.1.0"
 description = "APEX — AI-Powered Quantitative Trading System"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.110.0",
     "uvicorn[standard]>=0.27.0",
@@ -32,5 +32,5 @@ dev = [
 ]
 
 [tool.ruff]
-target-version = "py311"
+target-version = "py312"
 line-length = 120

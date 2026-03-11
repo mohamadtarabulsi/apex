@@ -7,10 +7,10 @@ export default defineConfig({
     host: '0.0.0.0',
     port: 5173,
     proxy: {
-      '/api': 'http://api:8000',
-      '/health': 'http://api:8000',
+      '/api': 'http://backend:8000',
+      '/health': 'http://backend:8000',
       '/ws': {
-        target: 'ws://api:8000',
+        target: 'ws://backend:8000',
         ws: true,
       },
     },

@@ -4,35 +4,34 @@ Personal AI quantitative trading system combining multi-model intelligence, pred
 
 ## Architecture
 
+2-container architecture: a single Python backend monolith + a React dashboard, backed by shared infrastructure.
+
 ```
-                        ┌─────────────────────────────┐
-                        │       APEX Dashboard        │
-                        │    React + Tailwind + WS    │
-                        │       (port 5173)           │
-                        └─────────────┬───────────────┘
-                                      │
-                        ┌─────────────▼───────────────┐
-                        │        FastAPI Gateway       │
-                        │    REST + WebSocket API      │
-                        │       (port 8000)           │
-                        └──┬──────┬──────┬──────┬─────┘
-                           │      │      │      │
-              ┌────────────▼┐ ┌───▼──────▼┐ ┌──▼───────────┐
-              │ Data Engine  │ │Intelligence│ │   Strategy   │
-              │  Feeds +     │ │ AI/ML +    │ │ Signal Gen + │
-              │  Indicators  │ │ Agents     │ │ Pred Markets │
-              └──────────────┘ └───────────┘ └──────────────┘
-                           │      │      │      │
-              ┌────────────▼──────▼──────▼──────▼─────┐
-              │        Shared Context Bus              │
-              │  PostgreSQL │ QuestDB │ Redis │ NATS   │
-              └────────────────────────────────────────┘
-                                      │
-                        ┌─────────────▼───────────────┐
-                        │    Risk & Execution Engine   │
-                        │  VaR/CVaR + Kill Switch +    │
-                        │  Alpaca/Kalshi/Polymarket    │
-                        └─────────────────────────────┘
+              ┌─────────────────────────────┐
+              │       APEX Dashboard        │
+              │    React + Tailwind + WS    │
+              │       (port 5173)           │
+              └─────────────┬───────────────┘
+                            │
+              ┌─────────────▼───────────────┐
+              │      Backend Monolith       │
+              │    FastAPI — single process  │
+              │       (port 8000)           │
+              │                             │
+              │  ┌──────────┐ ┌───────────┐ │
+              │  │  Data    │ │Intelligence│ │
+              │  │  Engine  │ │  Engine    │ │
+              │  └──────────┘ └───────────┘ │
+              │  ┌──────────┐ ┌───────────┐ │
+              │  │ Strategy │ │   Risk &  │ │
+              │  │  Engine  │ │ Execution │ │
+              │  └──────────┘ └───────────┘ │
+              └──┬──────┬──────┬──────┬─────┘
+                 │      │      │      │
+              ┌──▼──────▼──────▼──────▼─────┐
+              │     Shared Context Bus       │
+              │ PostgreSQL│QuestDB│Redis│NATS│
+              └─────────────────────────────┘
 ```
 
 ## Quick Start
@@ -52,20 +51,31 @@ docker-compose up
 
 The dashboard will be at `http://localhost:5173` and the API at `http://localhost:8000`.
 
-## Services
+## Containers
 
-| Service | Port | Description |
-|---------|------|-------------|
-| **Dashboard** | 5173 | React dark terminal UI — real-time trading dashboard |
-| **API** | 8000 | FastAPI backend — REST + WebSocket gateway |
-| **PostgreSQL** | 5432 | Shared context bus — 8 tables for prices, signals, trades, risk |
-| **QuestDB** | 9000/9009 | High-frequency time-series — tick data and candles |
-| **Redis** | 6379 | Pub/sub, streams, and caching |
-| **NATS** | 4222 | JetStream event bus — inter-service messaging |
+| Container | Port | Description |
+|-----------|------|-------------|
+| **backend** | 8000 | FastAPI monolith — all 4 engines in one process (REST + WebSocket) |
+| **dashboard** | 5173 | React dark terminal UI — real-time trading dashboard |
+| **postgres** | 5432 | Shared context bus — 8 tables for prices, signals, trades, risk |
+| **questdb** | 9000/9009 | High-frequency time-series — tick data and candles |
+| **redis** | 6379 | Pub/sub, streams, and caching |
+| **nats** | 4222 | JetStream event bus — inter-module messaging |
+
+## Backend Modules
+
+The backend is a single FastAPI process with 4 importable Python packages:
+
+- **data_engine** — Market data ingestion (feeds, indicators)
+- **intelligence** — AI/ML model orchestration (sentiment, regime, research agents)
+- **strategy** — Trade signal generation (crypto, equities, options, prediction markets)
+- **risk_execution** — Risk management and order execution (VaR/CVaR, brokers, kill switch)
+
+All modules share in-process memory via the `shared/` package (config, database, Redis, NATS, QuestDB).
 
 ## Tech Stack
 
-- **Backend**: Python 3.11, FastAPI, asyncpg, SQLAlchemy 2.0, NATS JetStream
+- **Backend**: Python 3.12, FastAPI, asyncpg, SQLAlchemy 2.0, NATS JetStream
 - **Frontend**: React 18, TypeScript, Tailwind CSS, Vite, Zustand, Lightweight Charts
 - **Infrastructure**: PostgreSQL 16, QuestDB, Redis 7, NATS 2.10
 - **AI/ML**: Claude, GPT-4, Grok, DeepSeek, Sonar, FinBERT (Phase 2+)
@@ -90,9 +100,10 @@ All shared state lives in PostgreSQL under the `context` schema:
 # Run just infrastructure
 docker-compose up postgres questdb redis nats
 
-# Run API locally
+# Run backend locally
+cd backend
 pip install -r requirements.txt
-uvicorn api:app --reload --port 8000
+uvicorn main:app --reload --port 8000
 
 # Run dashboard locally
 cd dashboard && npm install && npm run dev

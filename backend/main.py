@@ -1,11 +1,9 @@
 """APEX — Main FastAPI application. Single process running all 4 service modules."""
 
-import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
-from uuid import UUID
 
 import structlog
 from fastapi import FastAPI, Query, WebSocket, WebSocketDisconnect
@@ -24,27 +22,19 @@ from shared.models import (
     SystemHealth,
 )
 
+from data_engine import data_engine
+from intelligence import intelligence_engine
+from strategy import strategy_engine
+from risk_execution import risk_execution_engine
+
+from data_engine.router import router as data_router
+from intelligence.router import router as intelligence_router
+from strategy.router import router as strategy_router
+from risk_execution.router import router as risk_router
+
 logger = structlog.get_logger()
 
 START_TIME = time.time()
-
-
-# --- Service imports ---
-import sys, os
-
-sys.path.insert(0, os.path.dirname(__file__))
-
-from importlib import import_module
-
-data_engine_mod = import_module("data-engine.main")
-intelligence_mod = import_module("intelligence.main")
-strategy_mod = import_module("strategy.main")
-risk_execution_mod = import_module("risk-execution.main")
-
-data_engine = data_engine_mod.data_engine
-intelligence_engine = intelligence_mod.intelligence_engine
-strategy_engine = strategy_mod.strategy_engine
-risk_execution_engine = risk_execution_mod.risk_execution_engine
 
 
 # --- WebSocket manager ---
@@ -110,6 +100,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# --- Include module routers ---
+app.include_router(data_router)
+app.include_router(intelligence_router)
+app.include_router(strategy_router)
+app.include_router(risk_router)
+
 
 # --- Health endpoints ---
 
@@ -165,7 +161,7 @@ async def detailed_status():
     }
 
 
-# --- Data endpoints ---
+# --- Top-level convenience endpoints (preserve existing API paths) ---
 
 
 @app.get("/api/v1/prices/{symbol}")
@@ -274,6 +270,7 @@ async def get_signal(signal_id: str):
     try:
         pool = await get_pool()
         async with pool.acquire() as conn:
+            from uuid import UUID
             row = await conn.fetchrow(
                 "SELECT * FROM context.signals WHERE signal_id = $1",
                 UUID(signal_id),
