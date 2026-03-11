@@ -1,13 +1,13 @@
 import { useAppStore } from '../stores/appStore';
 
 export function StatusBar() {
-  const { connected, uptime } = useAppStore();
+  const { connected, uptime, modules } = useAppStore();
 
   const feeds = [
-    { name: 'Binance WS', active: false },
-    { name: 'Alpaca WS', active: false },
-    { name: 'Kalshi REST', active: false },
-    { name: 'Polymarket REST', active: false },
+    { name: 'Binance WS', active: modules.data_engine?.feeds?.binance_ws ?? false },
+    { name: 'Alpaca WS', active: modules.data_engine?.feeds?.alpaca_ws ?? false },
+    { name: 'Kalshi REST', active: modules.data_engine?.feeds?.kalshi ?? false },
+    { name: 'Polymarket REST', active: modules.data_engine?.feeds?.polymarket ?? false },
     { name: 'NATS Bus', active: connected },
     { name: 'Redis Stream', active: connected },
   ];

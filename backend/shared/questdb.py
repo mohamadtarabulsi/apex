@@ -1,7 +1,7 @@
 """QuestDB connection — ILP ingestion and REST query interface."""
 
 import socket
-from datetime import datetime
+from datetime import datetime, timezone
 
 import aiohttp
 import structlog
@@ -32,7 +32,7 @@ class QuestDBClient:
         sock = self._get_socket()
         tag_str = ",".join(f"{k}={v}" for k, v in tags.items())
         field_str = ",".join(f"{k}={v}" for k, v in fields.items())
-        ts = int((timestamp or datetime.utcnow()).timestamp() * 1_000_000_000)
+        ts = int((timestamp or datetime.now(timezone.utc)).timestamp() * 1_000_000_000)
         line = f"{table},{tag_str} {field_str} {ts}\n"
         sock.sendall(line.encode())
 

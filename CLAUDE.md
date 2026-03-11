@@ -1,38 +1,62 @@
-# Instructions
+# APEX — Project Instructions
 
-You are an autonomous coding subagent spawned by a parent agent to complete a specific task. You run unattended — there is no human in the loop and no way to ask for clarification. You must complete the task fully on your own and then exit.
+## Overview
+APEX is a personal AI quantitative trading system. 2-container architecture: Python backend monolith + React dashboard.
 
-You have two categories of skills:
+## Architecture
+- **Backend**: Python 3.12 FastAPI monolith — 4 modules (data_engine, intelligence, strategy, risk_execution) in one process
+- **Dashboard**: React 18 + TypeScript + Vite + Tailwind CSS — dark terminal aesthetic
+- **Infrastructure**: PostgreSQL 16 + QuestDB 9.3.3 + Redis 7 + NATS 2.12 JetStream
+- **Deployment**: `docker compose up` — 2 app containers + 4 infra containers
 
-- **Coding skills** (`coding-workflow`, `commit-push-pr`, `pr-description`, `code-simplifier`, `code-review`): For repository work, writing code, git operations, pull requests, and code quality
-- **Data skills** (`data-triage`, `data-analyst`, `data-model-explorer`): For database queries, metrics, data analysis, and visualizations
-- **Repo skills** (`repo-skills`): After cloning any repo, scan for and index its skill definitions
+## Repository Structure
+```
+backend/
+  main.py              # FastAPI app — imports all 4 modules
+  data_engine/         # Service 1: market data ingestion
+  intelligence/        # Service 2: AI/ML inference
+  strategy/            # Service 3: trading strategies
+  risk_execution/      # Service 4: risk mgmt + order execution
+  shared/              # Shared utilities (config, DB, Redis, NATS, QuestDB)
+dashboard/
+  src/
+    components/        # React components
+    hooks/             # Custom hooks (useWebSocket)
+    stores/            # Zustand state management
+    types/             # TypeScript type definitions
+    lib/               # API client helpers
+docker/
+  postgres/init.sql    # PostgreSQL schema initialization
+```
 
-Load the appropriate skill based on the task. If the task involves both code and data, load both. Always load `repo-skills` after cloning a repository.
+## Code Conventions
 
-## Execution Rules
+### Python (backend/)
+- Python 3.12, type hints everywhere
+- FastAPI with async/await, asyncpg for PostgreSQL
+- Use `datetime.now(timezone.utc)` — never `datetime.utcnow()` (deprecated)
+- Structured logging via `structlog`
+- Each module has: `engine.py` (core logic), `router.py` (FastAPI endpoints), `__init__.py` (exports)
+- Shared state via PostgreSQL `context` schema (8 tables) — not in-memory globals
+- Environment config via Pydantic settings from `.env`
 
-- Do NOT stall. If an approach isn't working, try a different one immediately.
-- Do NOT explore the codebase endlessly. Get oriented quickly, then start making changes.
-- If a tool is missing (e.g., `rg`), use an available alternative (e.g., `grep -r`) and move on.
-- If a git operation fails, try a different approach (e.g., `gh repo clone` instead of `git clone`).
-- Stay focused on the objective. Do not go on tangents or investigate unrelated code.
-- If you are stuck after multiple retries, abort and report what went wrong rather than looping forever.
+### TypeScript (dashboard/)
+- React 18, strict TypeScript, functional components only
+- Zustand for global state — single store in `stores/appStore.ts`
+- Single WebSocket connection in `useWebSocket.ts` — components read from the store, never open their own connections
+- Tailwind CSS with custom APEX theme (bg: #0a0a0f, green: #00ff88, blue: #0088ff, red: #ff3366)
+- JetBrains Mono font throughout
 
-## Repo Conventions
+### API
+- Module routers with prefixes: `/api/v1/data`, `/api/v1/intelligence`, `/api/v1/strategy`, `/api/v1/risk`
+- System endpoints: `GET /health`, `GET /api/v1/status`, `WS /ws/feed`
+- No duplicate endpoints — each endpoint lives in exactly one router
 
-After cloning any repository, immediately check for and read these files at the repo root:
-- `CLAUDE.md` — Claude Code instructions and project conventions
-- `AGENTS.md` — Agent-specific instructions
+### Infrastructure
+- Docker Compose — no `version:` key (deprecated)
+- PostgreSQL schema auto-created via `docker/postgres/init.sql`
+- All service connections initialized on FastAPI startup via lifespan context manager
 
-Follow all instructions and conventions found in these files. They define the project's coding standards, test requirements, commit conventions, and PR expectations. If they conflict with these instructions, the repo's files take precedence.
-
-## Core Rules
-
-- Ensure all changes follow the project's coding standards (as discovered from repo convention files above)
-- NEVER approve PRs — you are not authorized to approve pull requests. Only create and comment on PRs.
-- Complete the task autonomously and create the PR(s) when done.
-
-## Output Persistence
-
-IMPORTANT: Before finishing, you MUST write your complete final response to `/tmp/claude_code_output.md` using the Write tool. This file must contain your full analysis, findings, code, or whatever the final deliverable is. This is a hard requirement — do not skip it.
+## Commit Style
+- Conventional commits: `feat:`, `fix:`, `refactor:`, `docs:`, `chore:`
+- Push directly to `main` for now (single developer)

@@ -12,9 +12,15 @@ interface AppState {
   connected: boolean;
   uptime: number;
   services: Record<string, ServiceStatus>;
+  modules: Record<string, any>;
   setConnected: (c: boolean) => void;
   setUptime: (u: number) => void;
   setServices: (s: Record<string, ServiceStatus>) => void;
+  setModules: (m: Record<string, any>) => void;
+
+  // Prices (real-time from WebSocket)
+  latestPrices: Record<string, { price: number; timestamp: string; open?: number; high?: number; low?: number; close?: number; type?: string }>;
+  updatePrice: (symbol: string, data: { price: number; timestamp: string; open?: number; high?: number; low?: number; close?: number; type?: string }) => void;
 
   // Signals
   signals: SignalRecord[];
@@ -41,9 +47,18 @@ export const useAppStore = create<AppState>((set) => ({
   connected: false,
   uptime: 0,
   services: {},
+  modules: {},
   setConnected: (connected) => set({ connected }),
   setUptime: (uptime) => set({ uptime }),
   setServices: (services) => set({ services }),
+  setModules: (modules) => set({ modules }),
+
+  // Prices
+  latestPrices: {},
+  updatePrice: (symbol, data) =>
+    set((state) => ({
+      latestPrices: { ...state.latestPrices, [symbol]: data },
+    })),
 
   // Signals
   signals: [],

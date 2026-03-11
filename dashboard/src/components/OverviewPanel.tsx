@@ -68,8 +68,11 @@ function CandlestickChart() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart>>();
   const seriesRef = useRef<ISeriesApi<'Candlestick'>>();
-  const [lastPrice, setLastPrice] = useState<number | null>(null);
   const [timeframe, setTimeframe] = useState('1m');
+
+  // Read latest price from the store (pushed by useWebSocket)
+  const latestPrice = useAppStore((s) => s.latestPrices['BTCUSDT']);
+  const lastPrice = latestPrice?.price ?? null;
 
   // Fetch historical candles from the API
   const loadCandles = useCallback(async (tf: string) => {
@@ -79,13 +82,13 @@ function CandlestickChart() {
       if (seriesRef.current && data.length > 0) {
         seriesRef.current.setData(data);
         chartRef.current?.timeScale().fitContent();
-        setLastPrice(data[data.length - 1].close);
       }
     } catch {
       // API not available yet — chart stays empty
     }
   }, []);
 
+  // Create chart once
   useEffect(() => {
     if (!containerRef.current) return;
 
@@ -136,51 +139,27 @@ function CandlestickChart() {
     };
     window.addEventListener('resize', handleResize);
 
-    // Subscribe to real-time price updates via WebSocket
-    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const wsUrl = `${wsProto}://${window.location.host}/ws/feed`;
-    let ws: WebSocket | null = null;
-    let reconnectTimer: ReturnType<typeof setTimeout>;
-
-    function connectWS() {
-      ws = new WebSocket(wsUrl);
-      ws.onmessage = (event) => {
-        try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === 'price' && msg.data?.symbol === 'BTCUSDT') {
-            const d = msg.data;
-            if (d.type === 'candle' && d.open != null) {
-              // Full candle update
-              const candleTime = Math.floor(new Date(d.timestamp).getTime() / 1000);
-              candleSeries.update({
-                time: candleTime as number,
-                open: d.open,
-                high: d.high,
-                low: d.low,
-                close: d.close,
-              });
-              setLastPrice(d.close);
-            } else if (d.type === 'tick' && d.price != null) {
-              setLastPrice(d.price);
-            }
-          }
-        } catch {
-          // Ignore parse errors
-        }
-      };
-      ws.onclose = () => {
-        reconnectTimer = setTimeout(connectWS, 3000);
-      };
-    }
-    connectWS();
-
     return () => {
       window.removeEventListener('resize', handleResize);
-      clearTimeout(reconnectTimer);
-      ws?.close();
       chart.remove();
     };
   }, [timeframe, loadCandles]);
+
+  // Update chart when new price arrives from the store
+  useEffect(() => {
+    if (!seriesRef.current || !latestPrice) return;
+
+    if (latestPrice.type === 'candle' && latestPrice.open != null) {
+      const candleTime = Math.floor(new Date(latestPrice.timestamp).getTime() / 1000);
+      seriesRef.current.update({
+        time: candleTime as number,
+        open: latestPrice.open!,
+        high: latestPrice.high!,
+        low: latestPrice.low!,
+        close: latestPrice.close!,
+      });
+    }
+  }, [latestPrice]);
 
   const formatPrice = (p: number | null) =>
     p != null ? `$${p.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—';

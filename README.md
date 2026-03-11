@@ -123,4 +123,4 @@ cd dashboard && npm install && npm run dev
 
 ## Master Plan
 
-Full system design: [APEX Master Plan v5.2](./docs/APEX_Master_Plan_v5.2.md)
+Full system design: [APEX Master Plan v5.3](./docs/APEX_Master_Plan_v5.3.md)
