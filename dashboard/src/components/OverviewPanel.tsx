@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   TrendingUp,
   Target,
@@ -8,10 +8,12 @@ import {
   DollarSign,
 } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { createChart, ColorType } from 'lightweight-charts';
+import { createChart, ColorType, ISeriesApi } from 'lightweight-charts';
 import { useAppStore } from '../stores/appStore';
 import { SignalFeed } from './SignalFeed';
 import { SystemHealth } from './SystemHealth';
+import { api } from '../lib/api';
+import type { PriceRecord } from '../types';
 
 // Placeholder equity curve data
 const equityData = Array.from({ length: 90 }, (_, i) => {
@@ -21,21 +23,6 @@ const equityData = Array.from({ length: 90 }, (_, i) => {
   return {
     day: i,
     value: base + trend + noise,
-  };
-});
-
-// Demo candle data
-const candleData = Array.from({ length: 60 }, (_, i) => {
-  const baseTime = Math.floor(Date.now() / 1000) - (60 - i) * 3600;
-  const basePrice = 67000 + Math.sin(i * 0.15) * 1500 + i * 20;
-  const o = basePrice + (Math.random() - 0.5) * 200;
-  const c = basePrice + (Math.random() - 0.5) * 200;
-  return {
-    time: baseTime as number,
-    open: o,
-    high: Math.max(o, c) + Math.random() * 150,
-    low: Math.min(o, c) - Math.random() * 150,
-    close: c,
   };
 });
 
@@ -64,9 +51,40 @@ function MetricCard({
   );
 }
 
+function priceToCandleData(records: PriceRecord[]) {
+  return records
+    .filter((r) => r.open != null && r.high != null && r.low != null && r.close != null)
+    .map((r) => ({
+      time: (Math.floor(new Date(r.timestamp).getTime() / 1000)) as number,
+      open: r.open!,
+      high: r.high!,
+      low: r.low!,
+      close: r.close!,
+    }))
+    .sort((a, b) => a.time - b.time);
+}
+
 function CandlestickChart() {
   const containerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<ReturnType<typeof createChart>>();
+  const seriesRef = useRef<ISeriesApi<'Candlestick'>>();
+  const [lastPrice, setLastPrice] = useState<number | null>(null);
+  const [timeframe, setTimeframe] = useState('1m');
+
+  // Fetch historical candles from the API
+  const loadCandles = useCallback(async (tf: string) => {
+    try {
+      const records = await api.prices('BTCUSDT', tf, 200) as PriceRecord[];
+      const data = priceToCandleData(records);
+      if (seriesRef.current && data.length > 0) {
+        seriesRef.current.setData(data);
+        chartRef.current?.timeScale().fitContent();
+        setLastPrice(data[data.length - 1].close);
+      }
+    } catch {
+      // API not available yet — chart stays empty
+    }
+  }, []);
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -106,8 +124,10 @@ function CandlestickChart() {
       wickDownColor: '#ff3366',
       wickUpColor: '#00ff88',
     });
-    candleSeries.setData(candleData);
-    chart.timeScale().fitContent();
+    seriesRef.current = candleSeries;
+
+    // Load initial data
+    loadCandles(timeframe);
 
     const handleResize = () => {
       if (containerRef.current) {
@@ -116,11 +136,54 @@ function CandlestickChart() {
     };
     window.addEventListener('resize', handleResize);
 
+    // Subscribe to real-time price updates via WebSocket
+    const wsProto = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const wsUrl = `${wsProto}://${window.location.host}/ws/feed`;
+    let ws: WebSocket | null = null;
+    let reconnectTimer: ReturnType<typeof setTimeout>;
+
+    function connectWS() {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === 'price' && msg.data?.symbol === 'BTCUSDT') {
+            const d = msg.data;
+            if (d.type === 'candle' && d.open != null) {
+              // Full candle update
+              const candleTime = Math.floor(new Date(d.timestamp).getTime() / 1000);
+              candleSeries.update({
+                time: candleTime as number,
+                open: d.open,
+                high: d.high,
+                low: d.low,
+                close: d.close,
+              });
+              setLastPrice(d.close);
+            } else if (d.type === 'tick' && d.price != null) {
+              setLastPrice(d.price);
+            }
+          }
+        } catch {
+          // Ignore parse errors
+        }
+      };
+      ws.onclose = () => {
+        reconnectTimer = setTimeout(connectWS, 3000);
+      };
+    }
+    connectWS();
+
     return () => {
       window.removeEventListener('resize', handleResize);
+      clearTimeout(reconnectTimer);
+      ws?.close();
       chart.remove();
     };
-  }, []);
+  }, [timeframe, loadCandles]);
+
+  const formatPrice = (p: number | null) =>
+    p != null ? `$${p.toLocaleString(undefined, { maximumFractionDigits: 0 })}` : '—';
 
   return (
     <div className="bg-apex-panel border border-apex-border rounded-lg p-4">
@@ -128,14 +191,15 @@ function CandlestickChart() {
         <div className="flex items-center gap-2">
           <BarChart3 className="w-3.5 h-3.5 text-apex-blue" />
           <span className="text-xs text-apex-muted uppercase tracking-wider">BTC-USD</span>
-          <span className="text-xs text-apex-green font-semibold">$67,482</span>
+          <span className="text-xs text-apex-green font-semibold">{formatPrice(lastPrice)}</span>
         </div>
         <div className="flex items-center gap-2">
-          {['1H', '4H', '1D'].map((tf) => (
+          {['1m', '1H', '1D'].map((tf) => (
             <button
               key={tf}
+              onClick={() => setTimeframe(tf)}
               className={`text-[9px] px-1.5 py-0.5 rounded ${
-                tf === '1H'
+                tf === timeframe
                   ? 'bg-apex-blue/20 text-apex-blue'
                   : 'text-apex-muted hover:text-apex-text'
               }`}

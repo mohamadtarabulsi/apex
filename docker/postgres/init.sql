@@ -19,6 +19,7 @@ CREATE TABLE context.prices (
     indicators JSONB,
     created_at TIMESTAMPTZ DEFAULT NOW()
 );
+CREATE UNIQUE INDEX idx_prices_symbol_tf_ts ON context.prices(symbol, timeframe, timestamp);
 CREATE INDEX idx_prices_symbol_ts ON context.prices(symbol, timestamp DESC);
 CREATE INDEX idx_prices_asset_class ON context.prices(asset_class, timestamp DESC);
 
