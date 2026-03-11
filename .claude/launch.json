@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "dashboard",
+      "runtimeExecutable": "C:\\Program Files\\nodejs\\node.exe",
+      "runtimeArgs": ["--input-type=module", "-e", "import { fileURLToPath } from 'url'; import { dirname, join } from 'path'; process.chdir(join('.', 'dashboard')); await import('./dashboard/node_modules/vite/bin/vite.js');"],
+      "port": 5173
+    }
+  ]
+}

@@ -1,5 +1,6 @@
 """APEX — Main FastAPI application. Single process running all 4 service modules."""
 
+import asyncio
 import json
 import time
 from contextlib import asynccontextmanager
@@ -13,7 +14,7 @@ from shared.config import settings
 from shared.database import check_postgres, close_pool
 from shared.questdb import questdb
 from shared.redis_client import check_redis, close_redis
-from shared.nats_client import check_nats, close_nats
+from shared.nats_client import check_nats, close_nats, get_nats
 from shared.models import HealthStatus, SystemHealth
 
 from data_engine import data_engine
@@ -56,6 +57,25 @@ ws_manager = ConnectionManager()
 
 
 # --- Lifespan ---
+async def _nats_price_forwarder():
+    """Subscribe to NATS price ticks and broadcast to WebSocket clients."""
+    try:
+        nc = await get_nats()
+        js = nc.jetstream()
+        sub = await js.subscribe("prices.>", durable="ws_price_forwarder")
+        async for msg in sub.messages:
+            try:
+                payload = json.loads(msg.data.decode())
+                await ws_manager.broadcast({"type": "price", "data": payload})
+                await msg.ack()
+            except Exception:
+                await msg.ack()
+    except asyncio.CancelledError:
+        pass
+    except Exception as e:
+        logger.error("nats_price_forwarder.error", error=str(e))
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("apex.starting", environment=settings.environment)
@@ -63,9 +83,20 @@ async def lifespan(app: FastAPI):
     await intelligence_engine.start()
     await strategy_engine.start()
     await risk_execution_engine.start()
+
+    # Start NATS -> WebSocket price forwarder
+    forwarder_task = asyncio.create_task(_nats_price_forwarder())
+
     logger.info("apex.all_services_started")
     yield
     logger.info("apex.shutting_down")
+
+    forwarder_task.cancel()
+    try:
+        await forwarder_task
+    except asyncio.CancelledError:
+        pass
+
     await data_engine.stop()
     await intelligence_engine.stop()
     await strategy_engine.stop()
