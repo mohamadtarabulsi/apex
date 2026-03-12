@@ -42,7 +42,8 @@ class ConnectionManager:
         self.active.append(ws)
 
     def disconnect(self, ws: WebSocket):
-        self.active.remove(ws)
+        if ws in self.active:
+            self.active.remove(ws)
 
     async def broadcast(self, message: dict):
         data = json.dumps(message, default=str)
@@ -50,13 +51,14 @@ class ConnectionManager:
             try:
                 await ws.send_text(data)
             except Exception:
-                self.active.remove(ws)
+                if ws in self.active:
+                    self.active.remove(ws)
 
 
 ws_manager = ConnectionManager()
 
 
-# --- Lifespan ---
+# --- Background tasks ---
 async def _nats_price_forwarder():
     """Subscribe to NATS price ticks and broadcast to WebSocket clients."""
     try:
@@ -76,6 +78,53 @@ async def _nats_price_forwarder():
         logger.error("nats_price_forwarder.error", error=str(e))
 
 
+async def _status_broadcaster():
+    """Broadcast infrastructure health + module status to all WebSocket clients every 10 seconds."""
+    while True:
+        try:
+            await asyncio.sleep(10)
+
+            if not ws_manager.active:
+                continue
+
+            # Gather infrastructure health
+            pg = await check_postgres()
+            rd = await check_redis()
+            nt = await check_nats()
+            qdb = await questdb.health()
+
+            all_healthy = all(
+                s.get("status") == "healthy" for s in [pg, rd, nt, qdb]
+            )
+
+            status_msg = {
+                "type": "status",
+                "data": {
+                    "connected": True,
+                    "uptime": round(time.time() - START_TIME, 1),
+                    "status": "healthy" if all_healthy else "degraded",
+                    "services": {
+                        "postgres": {"service": "postgres", "status": pg.get("status", "unknown")},
+                        "redis": {"service": "redis", "status": rd.get("status", "unknown")},
+                        "nats": {"service": "nats", "status": nt.get("status", "unknown")},
+                        "questdb": {"service": "questdb", "status": qdb.get("status", "unknown")},
+                    },
+                    "modules": {
+                        "data_engine": data_engine.status(),
+                        "intelligence": intelligence_engine.status(),
+                        "strategy": strategy_engine.status(),
+                        "risk_execution": risk_execution_engine.status(),
+                    },
+                },
+            }
+            await ws_manager.broadcast(status_msg)
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error("status_broadcaster.error", error=str(e))
+
+
+# --- Lifespan ---
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("apex.starting", environment=settings.environment)
@@ -84,16 +133,22 @@ async def lifespan(app: FastAPI):
     await strategy_engine.start()
     await risk_execution_engine.start()
 
-    # Start NATS -> WebSocket price forwarder
+    # Start background tasks
     forwarder_task = asyncio.create_task(_nats_price_forwarder())
+    status_task = asyncio.create_task(_status_broadcaster())
 
     logger.info("apex.all_services_started")
     yield
     logger.info("apex.shutting_down")
 
     forwarder_task.cancel()
+    status_task.cancel()
     try:
         await forwarder_task
+    except asyncio.CancelledError:
+        pass
+    try:
+        await status_task
     except asyncio.CancelledError:
         pass
 
@@ -192,6 +247,12 @@ async def websocket_feed(ws: WebSocket):
     """Real-time feed — pushes prices, signals, and status updates."""
     await ws_manager.connect(ws)
     try:
+        # Send immediate status on connect (including infrastructure health)
+        pg = await check_postgres()
+        rd = await check_redis()
+        nt = await check_nats()
+        qdb = await questdb.health()
+
         await ws.send_text(
             json.dumps(
                 {
@@ -199,6 +260,12 @@ async def websocket_feed(ws: WebSocket):
                     "data": {
                         "connected": True,
                         "uptime": round(time.time() - START_TIME, 1),
+                        "services": {
+                            "postgres": {"service": "postgres", "status": pg.get("status", "unknown")},
+                            "redis": {"service": "redis", "status": rd.get("status", "unknown")},
+                            "nats": {"service": "nats", "status": nt.get("status", "unknown")},
+                            "questdb": {"service": "questdb", "status": qdb.get("status", "unknown")},
+                        },
                         "modules": {
                             "data_engine": data_engine.status(),
                             "intelligence": intelligence_engine.status(),

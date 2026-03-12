@@ -7,7 +7,7 @@ export function useWebSocket() {
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>();
   const { setConnected, setServices, setModules, setUptime, addSignal, setRisk, updatePrice } = useAppStore();
 
-  // Poll /health every 30 seconds for infrastructure status
+  // Poll /health every 30 seconds as a fallback for infrastructure status
   useEffect(() => {
     async function fetchHealth() {
       try {
@@ -36,7 +36,6 @@ export function useWebSocket() {
 
       ws.onopen = () => {
         setConnected(true);
-        // Start ping interval
         const pingInterval = setInterval(() => {
           if (ws.readyState === WebSocket.OPEN) {
             ws.send(JSON.stringify({ type: 'ping' }));
@@ -50,13 +49,27 @@ export function useWebSocket() {
           const msg: WSMessage = JSON.parse(event.data);
           switch (msg.type) {
             case 'status': {
-              const data = msg.data as { uptime?: number; modules?: Record<string, any> };
+              const data = msg.data as {
+                uptime?: number;
+                services?: Record<string, { service: string; status: string }>;
+                modules?: Record<string, any>;
+              };
               if (data.uptime) setUptime(data.uptime);
+              if (data.services) setServices(data.services);
               if (data.modules) setModules(data.modules);
               break;
             }
             case 'price': {
-              const data = msg.data as { symbol?: string; price?: number; timestamp?: string; open?: number; high?: number; low?: number; close?: number; type?: string };
+              const data = msg.data as {
+                symbol?: string;
+                price?: number;
+                timestamp?: string;
+                open?: number;
+                high?: number;
+                low?: number;
+                close?: number;
+                type?: string;
+              };
               if (data.symbol) {
                 updatePrice(data.symbol, {
                   price: data.price ?? data.close ?? 0,
@@ -84,7 +97,6 @@ export function useWebSocket() {
 
       ws.onclose = () => {
         setConnected(false);
-        // Reconnect after delay
         reconnectTimer.current = setTimeout(connect, 3000);
       };
 
