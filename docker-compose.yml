@@ -101,6 +101,8 @@ services:
     volumes:
       - ./dashboard/src:/app/src
       - ./dashboard/index.html:/app/index.html
+    environment:
+      VITE_BACKEND_URL: http://backend:8000
     depends_on:
       - backend
     restart: unless-stopped
